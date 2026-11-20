@@ -718,6 +718,7 @@ const ADMIN_HASH = "7e14e71409792a4c3811f30eaccc507ebed66c3fddced831aeac31785034
         const [sponsorDraft, setSponsorDraft] = useState("");
         const [auditPid, setAuditPid] = useState("");
         const [openTeam, setOpenTeam] = useState(null);
+        const [vocSearch, setVocSearch] = useState({});
 
         const [cpOpen, setCpOpen] = useState(false);
         const [cpOld, setCpOld] = useState("");
@@ -1465,6 +1466,45 @@ const ADMIN_HASH = "7e14e71409792a4c3811f30eaccc507ebed66c3fddced831aeac31785034
               return Object.assign({}, m, { lineups: Object.assign({}, m.lineups, { [tKey]: nextList }) });
             });
           });
+        };
+
+        const normTxt = function (x) { return String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); };
+        const lineupOf = function (m, tid) { return (m.lineups && m.lineups[m.t1 === tid ? "t1" : "t2"]) || []; };
+        const visiblePlayers = function (tid, tm) {
+          const m = activeVocaliaMatch;
+          const lu = lineupOf(m, tid);
+          return (tm.players || []).filter(function (p) {
+            return lu.indexOf(p.id) >= 0 ||
+              (m.matchGoals || []).some(function (g) { return g.playerId === p.id && g.teamId === tid; }) ||
+              (m.matchCards || []).some(function (c) { return c.playerId === p.id && c.teamId === tid; });
+          });
+        };
+        const renderVocSearch = function (tid, tm) {
+          const m = activeVocaliaMatch;
+          if (!canEditVocalia || (m.isSubmitted && !isSuperAdmin)) return null;
+          const q = normTxt(vocSearch[tid] || "").trim();
+          const listed = visiblePlayers(tid, tm).map(function (p) { return p.id; });
+          const results = q ? (tm.players || []).filter(function (p) {
+            return listed.indexOf(p.id) < 0 && (normTxt(p.name).indexOf(q) >= 0 || String(p.number) === q || ("#" + p.number) === q);
+          }).slice(0, 6) : [];
+          return h("div", { className: "p-2 border-b border-slate-200 bg-white space-y-1" },
+            h("input", {
+              value: vocSearch[tid] || "",
+              onChange: function (e) { const v = e.target.value; setVocSearch(function (prev) { return Object.assign({}, prev, { [tid]: v }); }); },
+              placeholder: "🔍 Buscar jugador de " + tm.name + " (nombre o #)",
+              className: "w-full border border-slate-300 rounded-lg px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-emerald-500"
+            }),
+            q && results.length === 0 && h("div", { className: "text-[11px] text-slate-400 px-1" }, "Sin coincidencias (o ya está en la lista del día)"),
+            results.map(function (p) {
+              return h("button", {
+                key: p.id,
+                onClick: function () {
+                  toggleLineup(m.id, tid, p.id);
+                  setVocSearch(function (prev) { return Object.assign({}, prev, { [tid]: "" }); });
+                },
+                className: "w-full text-left bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2 text-[12px] font-bold text-slate-800"
+              }, "➕ #" + p.number + " " + p.name);
+            }));
         };
 
         const addPlayerStat = function (matchId, teamId, playerId, statField) {
@@ -2930,8 +2970,10 @@ const ADMIN_HASH = "7e14e71409792a4c3811f30eaccc507ebed66c3fddced831aeac31785034
                             h("div", { className: "bg-slate-200 px-3 py-2 text-[11px] font-black text-slate-700 flex justify-between items-center" },
                               h("span", null, "🛡️ ", tm.name)
                             ),
+                            renderVocSearch(tid, tm),
                             h("div", { className: "divide-y divide-slate-200" },
-                              (tm.players || []).map(function (p) {
+                              visiblePlayers(tid, tm).length === 0 && h("div", { className: "p-3 text-[11px] text-slate-400" }, "Aún no hay jugadores en la lista del día. Búscalos arriba y agrégalos."),
+                              visiblePlayers(tid, tm).map(function (p) {
                                 const lineupKey = activeVocaliaMatch.t1 === tid ? "t1" : "t2";
                                 const isStarter = activeVocaliaMatch.lineups && activeVocaliaMatch.lineups[lineupKey] && activeVocaliaMatch.lineups[lineupKey].includes(p.id);
                                 const matchCardsForPlayer = (activeVocaliaMatch.matchCards || []).filter(function (c) { return c.playerId === p.id && c.teamId === tid; });
@@ -2943,6 +2985,7 @@ const ADMIN_HASH = "7e14e71409792a4c3811f30eaccc507ebed66c3fddced831aeac31785034
                                     className: "flex gap-1.5 items-center flex-1 cursor-pointer flex-wrap",
                                     onClick: function () {
                                       if (canEditVocalia && (!activeVocaliaMatch.isSubmitted || isSuperAdmin)) {
+                                        if (isStarter && (goalsInMatch > 0 || yellowCountInMatch + redCountInMatch > 0)) { showMsg("No se puede quitar: tiene goles o tarjetas en este partido"); return; }
                                         toggleLineup(activeVocaliaMatch.id, tid, p.id);
                                       }
                                     }
@@ -3111,7 +3154,7 @@ const ADMIN_HASH = "7e14e71409792a4c3811f30eaccc507ebed66c3fddced831aeac31785034
                 { id: "primera_fase", icon: "📅", label: "1ra Fase" },
                 { id: "segunda_fase", icon: "⚔️", label: "2da Fase" },
                 { id: "final", icon: "🏆", label: "Final" },
-                { id: "estadisticas", icon: "📈", label: "Datos" },
+                { id: "estadisticas", icon: "📈", label: "Estads" },
                 { id: "vocalia", icon: "📋", label: "Vocalía" },
                 { id: "info", icon: "📢", label: "Info" }
               ].map(function (item) {
